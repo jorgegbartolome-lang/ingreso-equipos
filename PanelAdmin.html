@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Panel Admin — Ingreso de Equipos</title>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background:#f4f6f8; margin:0; padding:0; color:#1f2937; }
+  .container { max-width: 900px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; color:#0f172a; }
+  .card { background:#fff; border-radius:10px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,0.1); }
+  label { display:block; font-size:13px; font-weight:bold; margin-top:10px; margin-bottom:4px; }
+  input, select, textarea { width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; }
+  button { background:#4f46e5; color:#fff; border:none; padding:10px 16px; border-radius:6px; font-size:14px; cursor:pointer; margin-top:12px; }
+  button.secondary { background:#64748b; }
+  button.danger { background:#dc2626; }
+  button.warn { background:#ea580c; }
+  button.print-btn { background:#16a34a; }
+  button.scan-btn { background:#0f172a; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:140px; }
+  .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
+  .btn-row > button { flex:1; }
+  .item { border-bottom:1px solid #e5e7eb; padding:10px 0; cursor:pointer; }
+  .item:hover { background:#f8fafc; }
+  .badge { display:inline-block; padding:3px 8px; border-radius:12px; font-size:11px; color:#fff; }
+  .top-actions { display:flex; gap:8px; margin-bottom:14px; }
+  .tabs { display:flex; gap:8px; flex:1; }
+  .tabs button { background:#e2e8f0; color:#1f2937; margin-top:0; }
+  .tabs button.active { background:#4f46e5; color:#fff; }
+  .timeline { border-left:2px solid #cbd5e1; padding-left:14px; margin-top:10px; }
+  .timeline-item { margin-bottom:12px; }
+  .timeline-item .fecha { font-size:12px; color:#64748b; }
+  .qr-img { display:block; margin:10px auto; }
+  .qr-wrap { text-align:center; background:#eef2ff; border-radius:10px; padding:14px; margin:12px 0; }
+  .costo { color:#166534; font-weight:bold; }
+  .rechazado { background:#fef2f2; border:1.5px solid #fca5a5; color:#991b1b; padding:12px; border-radius:8px; font-size:13px; }
+  .bloqueado { background:#f1f5f9; border:1.5px solid #cbd5e1; padding:12px; border-radius:8px; font-size:13px; }
+  .espera { background:#f8fafc; border:1.5px solid #e2e8f0; padding:12px; border-radius:8px; font-size:13px; color:#64748b; }
+  .modal-overlay { position:fixed; inset:0; background:rgba(15,23,42,0.85); display:flex; align-items:center; justify-content:center; z-index:999; }
+  .modal-box { background:#fff; border-radius:14px; padding:20px; max-width:420px; width:92%; text-align:center; }
+  #videoScan { width:100%; border-radius:10px; background:#000; }
+  .config-box { background:#fffbeb; border:1.5px solid #fde68a; padding:14px; border-radius:10px; margin-bottom:14px; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🛠️ Panel Admin — Ingreso de Equipos</h1>
+
+  <div id="configBox" class="config-box" style="display:none;">
+    ⚙️ Primera vez: pegá la URL de tu API de Apps Script (termina en <code>/exec</code>)
+    <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
+    <button onclick="guardarScriptUrl()">Guardar URL</button>
+  </div>
+
+  <div id="loginBox" class="card" style="display:none;">
+    <label>Contraseña de Admin</label>
+    <input type="password" id="passInput" placeholder="Ingresá la contraseña">
+    <button onclick="login()">Ingresar</button>
+    <div id="loginError" style="color:#dc2626; margin-top:8px; font-size:13px;"></div>
+  </div>
+
+  <div id="appBox" style="display:none;">
+    <div class="top-actions">
+      <div class="tabs">
+        <button id="tabNuevo" onclick="mostrarTab('nuevo')">+ Nuevo Ingreso</button>
+        <button id="tabLista" onclick="mostrarTab('lista')" class="active">Listado</button>
+      </div>
+      <button class="scan-btn" style="margin-top:0;" onclick="abrirScanner()">📷 Escanear QR</button>
+    </div>
+
+    <div id="vistaNuevo" class="card" style="display:none;">
+      <h3>Nuevo Ingreso</h3>
+      <label>Camino</label>
+      <select id="camino" onchange="toggleOT()">
+        <option value="Con OT">Con OT</option>
+        <option value="Sin OT">Sin OT</option>
+      </select>
+      <div id="campoOT"><label>N° de OT</label><input type="text" id="numOT"></div>
+      <label>Responsable (quién trae)</label>
+      <select id="responsableTrae"></select>
+      <label>Origen</label>
+      <input type="text" id="origen" placeholder="Cliente, sucursal, dirección...">
+      <div class="row">
+        <div><label>Tipo de equipo</label><input type="text" id="tipoEquipo"></div>
+        <div><label>Marca</label><input type="text" id="marca"></div>
+        <div><label>Modelo</label><input type="text" id="modelo"></div>
+      </div>
+      <label>N° de Serie</label><input type="text" id="nSerie">
+      <label>Problema reportado</label><textarea id="problemaReportado" rows="3"></textarea>
+      <label>Quién recibe</label>
+      <select id="quienRecibe"></select>
+      <button onclick="guardarIngreso()">Guardar Ingreso</button>
+      <div id="resultadoNuevo"></div>
+    </div>
+
+    <div id="vistaLista" class="card">
+      <label>Filtrar por estado</label>
+      <select id="filtroEstado" onchange="cargarLista()"><option value="Todos">Todos</option></select>
+      <div id="listaIngresos"></div>
+    </div>
+
+    <div id="vistaDetalle" class="card" style="display:none;">
+      <button class="secondary" onclick="volverALista()">← Volver</button>
+      <div id="detalleContenido"></div>
+    </div>
+  </div>
+</div>
+
+<div id="scannerModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h3>📷 Escanear QR del equipo</h3>
+    <video id="videoScan" autoplay playsinline muted></video>
+    <p id="scanStatus" style="font-size:13px;color:#64748b;">Apuntá la cámara al QR pegado en el equipo...</p>
+    <button class="secondary" onclick="cerrarScanner()">Cancelar</button>
+  </div>
+</div>
+
+<script>
+// ===== CONEXIÓN A LA API (Apps Script) =====
+let SCRIPT_URL = localStorage.getItem('ingresoEquipos_scriptUrl') || '';
+
+function initConexion() {
+  if (!SCRIPT_URL) {
+    document.getElementById('configBox').style.display = 'block';
+  } else {
+    document.getElementById('loginBox').style.display = 'block';
+  }
+}
+
+function guardarScriptUrl() {
+  const url = document.getElementById('scriptUrlInput').value.trim();
+  if (!url) return;
+  localStorage.setItem('ingresoEquipos_scriptUrl', url);
+  SCRIPT_URL = url;
+  document.getElementById('configBox').style.display = 'none';
+  document.getElementById('loginBox').style.display = 'block';
+}
+
+// Llama a la API. Usa POST con body de texto plano (evita preflight CORS), igual que la app del pañol.
+async function api(action, data) {
+  const res = await fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: action, data: data || {} })
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Error desconocido');
+  return json.result;
+}
+
+let ESTADOS = [];
+let PERSONAL = [];
+let ADMIN_PERSONAL = [];
+const COLORES = {
+  'Ingresado':'#3b82f6','A presupuestar':'#eab308','Presupuestado':'#a855f7',
+  'Listo para reparar':'#0ea5e9','En reparación':'#f97316','Listo para retirar':'#16a34a',
+  'Retirado':'#0891b2','Finalizado':'#6b7280'
+};
+let passwordAdmin = '';
+
+async function login() {
+  const pass = document.getElementById('passInput').value;
+  try {
+    const ok = await api('verificarPasswordAdmin', { pass: pass });
+    if (ok) {
+      passwordAdmin = pass;
+      document.getElementById('loginBox').style.display = 'none';
+      document.getElementById('appBox').style.display = 'block';
+      cargarBase();
+    } else {
+      document.getElementById('loginError').innerText = 'Contraseña incorrecta';
+    }
+  } catch (e) {
+    document.getElementById('loginError').innerText = 'Error de conexión: ' + e.message;
+  }
+}
+
+async function cargarBase() {
+  PERSONAL = await api('getPersonal');
+  ADMIN_PERSONAL = await api('getAdminPersonal');
+  ESTADOS = await api('getEstados');
+
+  ['responsableTrae','quienRecibe'].forEach(function(id) {
+    const sel = document.getElementById(id);
+    PERSONAL.forEach(function(p) { sel.appendChild(new Option(p, p)); });
+  });
+  const selFiltro = document.getElementById('filtroEstado');
+  ESTADOS.forEach(function(e) { selFiltro.appendChild(new Option(e, e)); });
+
+  cargarLista();
+}
+
+function mostrarTab(tab) {
+  document.getElementById('vistaNuevo').style.display = tab === 'nuevo' ? 'block' : 'none';
+  document.getElementById('vistaLista').style.display = tab === 'lista' ? 'block' : 'none';
+  document.getElementById('vistaDetalle').style.display = 'none';
+  document.getElementById('tabNuevo').className = tab === 'nuevo' ? 'active' : '';
+  document.getElementById('tabLista').className = tab === 'lista' ? 'active' : '';
+  if (tab === 'lista') cargarLista();
+}
+function toggleOT() {
+  document.getElementById('campoOT').style.display = document.getElementById('camino').value === 'Con OT' ? 'block' : 'none';
+}
+
+async function guardarIngreso() {
+  const datos = {
+    camino: document.getElementById('camino').value,
+    numOT: document.getElementById('numOT').value,
+    responsableTrae: document.getElementById('responsableTrae').value,
+    origen: document.getElementById('origen').value,
+    tipoEquipo: document.getElementById('tipoEquipo').value,
+    marca: document.getElementById('marca').value,
+    modelo: document.getElementById('modelo').value,
+    nSerie: document.getElementById('nSerie').value,
+    problemaReportado: document.getElementById('problemaReportado').value,
+    quienRecibe: document.getElementById('quienRecibe').value
+  };
+  if (!datos.tipoEquipo || !datos.problemaReportado) { alert('Completá tipo de equipo y problema reportado.'); return; }
+
+  try {
+    const res = await api('crearIngreso', datos);
+    document.getElementById('resultadoNuevo').innerHTML =
+      '<div class="qr-wrap"><b>✅ Ingreso creado: ' + res.idIngreso + '</b>' +
+      '<img class="qr-img" src="' + res.qrUrl + '" width="180">' +
+      '<button class="print-btn" onclick="imprimirEtiqueta(\'' + res.idIngreso + '\',\'' + res.qrUrl + '\')">🖨️ Imprimir etiqueta ahora</button></div>';
+    mostrarTab('lista');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+function imprimirEtiqueta(id, qrUrl) {
+  const w = window.open('', '_blank', 'width=420,height=520');
+  w.document.write('<html><head><title>Etiqueta ' + id + '</title><style>body{font-family:Arial;text-align:center;padding:20px;} .marco{border:2px dashed #999;padding:16px;border-radius:10px;}</style></head><body><div class="marco"><h2>' + id + '</h2><img src="' + qrUrl + '" width="220"></div></body></html>');
+  w.document.close();
+  setTimeout(function(){ try { w.print(); } catch(e) {} }, 400);
+}
+
+async function cargarLista() {
+  const filtro = document.getElementById('filtroEstado').value;
+  const cont = document.getElementById('listaIngresos');
+  cont.innerHTML = 'Cargando...';
+  try {
+    const items = await api('listarIngresosAdmin', { filtro: filtro });
+    if (!items.length) { cont.innerHTML = '<p>No hay ingresos con ese filtro.</p>'; return; }
+    cont.innerHTML = items.map(function(it) {
+      const color = COLORES[it.Estado_Actual] || '#64748b';
+      const costo = it.Presupuesto_Monto ? ' · $ ' + Number(it.Presupuesto_Monto).toLocaleString('es-AR') : '';
+      return '<div class="item" onclick="abrirDetalle(\'' + it.ID_Ingreso + '\')">' +
+        '<b>' + it.ID_Ingreso + '</b> — ' + it.Tipo_Equipo + ' (' + it.Marca + ' ' + it.Modelo + ')<br>' +
+        '<span class="badge" style="background:' + color + '">' + it.Estado_Actual + '</span>' +
+        '<span style="font-size:12px;color:#64748b;"> · Trae: ' + it.Responsable_Trae + costo + '</span></div>';
+    }).join('');
+  } catch (e) {
+    cont.innerHTML = '<p style="color:#dc2626;">Error: ' + e.message + '</p>';
+  }
+}
+
+function volverALista() {
+  document.getElementById('vistaDetalle').style.display = 'none';
+  document.getElementById('vistaLista').style.display = 'block';
+}
+
+function selectOpciones(idSel, lista, valorDefault) {
+  return '<select id="' + idSel + '"><option value="">-- Seleccionar --</option>' +
+    lista.map(function(p){return '<option value="'+p+'"'+(p===valorDefault?' selected':'')+'>'+p+'</option>';}).join('') + '</select>';
+}
+
+async function abrirDetalle(id) {
+  document.getElementById('vistaNuevo').style.display = 'none';
+  document.getElementById('vistaLista').style.display = 'none';
+  document.getElementById('vistaDetalle').style.display = 'block';
+  document.getElementById('detalleContenido').innerHTML = 'Cargando...';
+
+  try {
+    const data = await api('obtenerIngresoAdmin', { id: id });
+    if (!data) { document.getElementById('detalleContenido').innerHTML = '<p>No encontrado.</p>'; return; }
+    const ing = data.ingreso, hist = data.historial;
+    let html = '<h3>' + ing.ID_Ingreso + '</h3>';
+    html += '<p><b>Equipo:</b> ' + ing.Tipo_Equipo + ' - ' + ing.Marca + ' ' + ing.Modelo + ' (N° serie: ' + (ing.N_Serie||'-') + ')</p>';
+    html += '<p><b>Camino:</b> ' + ing.Camino + (ing.Num_OT ? ' — OT: ' + ing.Num_OT : '') + '</p>';
+    html += '<p><b>Trae:</b> ' + ing.Responsable_Trae + ' — <b>Origen:</b> ' + (ing.Origen||'-') + '</p>';
+    html += '<p><b>Problema reportado:</b> ' + ing.Problema_Reportado + '</p>';
+    html += '<p><b>Estado actual:</b> <span class="badge" style="background:' + (COLORES[ing.Estado_Actual]||'#64748b') + '">' + ing.Estado_Actual + '</span></p>';
+    if (ing.Diagnostico) html += '<p><b>Diagnóstico</b> (' + ing.Tecnico_Diagnostico + '): ' + ing.Diagnostico + '</p>';
+    if (ing.Presupuesto_Monto) html += '<p class="costo">💰 Presupuesto: $ ' + Number(ing.Presupuesto_Monto).toLocaleString('es-AR') + ' — cargado por ' + ing.Presupuestado_Por + '</p>';
+    if (ing.Aprobado_Por) html += '<p>✅ Aprobado por cliente — confirmado por ' + ing.Aprobado_Por + '</p>';
+    if (ing.Rechazado_Por) html += '<div class="rechazado">❌ Presupuesto no aprobado (registrado por ' + ing.Rechazado_Por + ')</div>';
+    if (ing.Tipo_Reparacion) html += '<p><b>Reparación:</b> ' + ing.Tipo_Reparacion + (ing.Proveedor_Externo?' ('+ing.Proveedor_Externo+')':'') + ' — Técnico: ' + ing.Tecnico_Reparacion + '</p>';
+    if (ing.En_Pausa === 'Sí') html += '<p style="color:#b45309;">⏸️ En pausa — Motivo: ' + ing.Motivo_Pausa + '</p>';
+    if (ing.Materiales_Usados) html += '<p><b>Materiales usados:</b><br>' + String(ing.Materiales_Usados).replace(/\n/g,'<br>') + '</p>';
+    if (ing.Solucion_Aplicada) html += '<p><b>Solución aplicada:</b> ' + ing.Solucion_Aplicada + ' (' + ing.Responsable_Cierre + ')</p>';
+    if (ing.Destino_Retiro) html += '<p><b>Retiro:</b> destino ' + ing.Destino_Retiro + ', retira ' + ing.Quien_Retira + '</p>';
+    if (ing.Comentario_Finalizacion) html += '<p><b>Comentario de cierre:</b> ' + ing.Comentario_Finalizacion + '</p>';
+    if (ing.QR_URL) html += '<div class="qr-wrap"><img class="qr-img" src="' + ing.QR_URL + '" width="140">' +
+      '<button class="print-btn" onclick="imprimirEtiqueta(\'' + ing.ID_Ingreso + '\',\'' + ing.QR_URL + '\')">🖨️ Reimprimir etiqueta</button></div>';
+
+    html += renderAccionesAdmin_(ing);
+
+    html += '<hr><h4>Historial</h4><div class="timeline">';
+    hist.forEach(function(h) {
+      html += '<div class="timeline-item"><span class="badge" style="background:' + (COLORES[h.Evento]||'#64748b') + '">' + h.Evento + '</span>' +
+        '<div class="fecha">' + new Date(h.Fecha).toLocaleString() + ' — ' + h.Responsable + '</div>' +
+        (h.Detalle ? '<div>' + h.Detalle + '</div>' : '') + '</div>';
+    });
+    html += '</div>';
+    document.getElementById('detalleContenido').innerHTML = html;
+  } catch (e) {
+    document.getElementById('detalleContenido').innerHTML = '<p style="color:#dc2626;">Error: ' + e.message + '</p>';
+  }
+}
+
+function renderAccionesAdmin_(ing) {
+  let html = '<hr><h4>Acciones</h4>';
+  const estado = ing.Estado_Actual;
+
+  if (estado === 'A presupuestar') {
+    html += '<label>Monto a presupuestar ($ ARS)</label><input type="number" id="montoPresupuesto">';
+    html += '<label>Cargado por</label>' + selectOpciones('quienPresupuesta', ADMIN_PERSONAL);
+    html += '<button onclick="guardarPresupuesto(\'' + ing.ID_Ingreso + '\')">Guardar presupuesto</button>';
+  } else if (estado === 'Presupuestado') {
+    html += '<div class="espera">Presupuesto cargado: $ ' + Number(ing.Presupuesto_Monto).toLocaleString('es-AR') + '. Esperando decisión del cliente.</div>';
+    html += '<label>Confirmado por</label>' + selectOpciones('quienAprueba', ADMIN_PERSONAL);
+    html += '<div class="btn-row">';
+    html += '<button onclick="confirmarAprobacion(\'' + ing.ID_Ingreso + '\')">✅ Cliente aprobó</button>';
+    html += '<button class="warn" onclick="mostrarRechazo()">❌ No aprobado</button>';
+    html += '</div>';
+    html += '<div id="bloqueRechazo" style="display:none;">';
+    html += '<label>Acción a tomar con el equipo</label><textarea id="accionRechazo" rows="2"></textarea>';
+    html += '<button class="danger" onclick="guardarRechazo(\'' + ing.ID_Ingreso + '\')">Confirmar — pasar a Finalizado</button>';
+    html += '</div>';
+  } else if (estado === 'Listo para retirar') {
+    html += '<label>Destino</label><input type="text" id="destinoRetiro" placeholder="Taller / Sucursal / Cliente">';
+    html += '<label>Quién retira</label>' + selectOpciones('quienRetiraSel', PERSONAL);
+    html += '<label>Registrado por</label>' + selectOpciones('quienRegistraRetiro', PERSONAL);
+    html += '<button onclick="guardarRetirado(\'' + ing.ID_Ingreso + '\')">Marcar Retirado</button>';
+  } else if (estado === 'Retirado') {
+    html += '<label>Finalizado por</label>' + selectOpciones('quienFinaliza', PERSONAL);
+    html += '<label>Comentario final (opcional)</label><textarea id="comentarioFinal" rows="2"></textarea>';
+    html += '<button class="danger" onclick="guardarFinalizado(\'' + ing.ID_Ingreso + '\')">🔒 Marcar Finalizado</button>';
+  } else if (estado === 'Finalizado') {
+    html += '<div class="bloqueado">✅ Ciclo finalizado. No se pueden hacer más cambios.</div>';
+  } else {
+    html += '<div class="espera">A la espera de una acción del técnico.</div>';
+  }
+  return html;
+}
+
+function mostrarRechazo() { document.getElementById('bloqueRechazo').style.display = 'block'; }
+
+async function guardarPresupuesto(id) {
+  const monto = document.getElementById('montoPresupuesto').value;
+  const quien = document.getElementById('quienPresupuesta').value;
+  if (!monto || !quien) { alert('Completá monto y quién carga.'); return; }
+  try { await api('registrarPresupuesto', { id: id, monto: monto, quien: quien, passwordAdmin: passwordAdmin }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+async function confirmarAprobacion(id) {
+  const quien = document.getElementById('quienAprueba').value;
+  if (!quien) { alert('Indicá quién confirma.'); return; }
+  try { await api('confirmarAprobacionCliente', { id: id, quien: quien, passwordAdmin: passwordAdmin }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+async function guardarRechazo(id) {
+  const quien = document.getElementById('quienAprueba').value;
+  const accion = document.getElementById('accionRechazo').value;
+  if (!quien) { alert('Indicá quién confirma.'); return; }
+  if (!accion) { alert('Indicá la acción a tomar.'); return; }
+  try { await api('marcarPresupuestoRechazado', { id: id, quien: quien, accion: accion, passwordAdmin: passwordAdmin }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+async function guardarRetirado(id) {
+  const destino = document.getElementById('destinoRetiro').value;
+  const quienRetira = document.getElementById('quienRetiraSel').value;
+  const quienRegistra = document.getElementById('quienRegistraRetiro').value;
+  if (!destino || !quienRetira || !quienRegistra) { alert('Completá todos los campos.'); return; }
+  try { await api('marcarRetirado', { id: id, destino: destino, quienRetira: quienRetira, quienRegistra: quienRegistra }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+async function guardarFinalizado(id) {
+  const quien = document.getElementById('quienFinaliza').value;
+  const comentario = document.getElementById('comentarioFinal').value;
+  if (!quien) { alert('Indicá quién finaliza.'); return; }
+  try { await api('marcarFinalizado', { id: id, quien: quien, comentario: comentario, passwordAdmin: passwordAdmin }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+
+// ===== ESCÁNER QR (cámara) — funciona porque GitHub Pages sirve por HTTPS =====
+let scanStream = null, scanActivo = false;
+function abrirScanner() {
+  document.getElementById('scannerModal').style.display = 'flex';
+  document.getElementById('scanStatus').innerText = 'Apuntá la cámara al QR pegado en el equipo...';
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function(stream) {
+    scanStream = stream;
+    document.getElementById('videoScan').srcObject = stream;
+    scanActivo = true;
+    requestAnimationFrame(tickScan);
+  }).catch(function(err) {
+    document.getElementById('scanStatus').innerText = 'No se pudo acceder a la cámara: ' + err.message;
+  });
+}
+function tickScan() {
+  if (!scanActivo) return;
+  const video = document.getElementById('videoScan');
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = (typeof jsQR !== 'undefined') ? jsQR(imageData.data, imageData.width, imageData.height) : null;
+    if (code && code.data) {
+      const match = code.data.match(/ID:\s*(\S+)/);
+      if (match) { cerrarScanner(); mostrarTab('lista'); abrirDetalle(match[1]); return; }
+    }
+  }
+  requestAnimationFrame(tickScan);
+}
+function cerrarScanner() {
+  scanActivo = false;
+  if (scanStream) { scanStream.getTracks().forEach(function(t){t.stop();}); scanStream = null; }
+  document.getElementById('scannerModal').style.display = 'none';
+}
+
+initConexion();
+</script>
+</body>
+</html>

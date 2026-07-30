@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Panel Técnico — Ingreso de Equipos</title>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background:#f0f9ff; margin:0; padding:0; color:#1f2937; }
+  .container { max-width: 900px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; color:#0c4a6e; }
+  .card { background:#fff; border-radius:10px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,0.1); }
+  label { display:block; font-size:13px; font-weight:bold; margin-top:10px; margin-bottom:4px; }
+  input, select, textarea { width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; }
+  button { background:#0ea5e9; color:#fff; border:none; padding:10px 16px; border-radius:6px; font-size:14px; cursor:pointer; margin-top:12px; }
+  button.secondary { background:#64748b; }
+  button.scan-btn { background:#0f172a; }
+  button.material-btn { background:#7c3aed; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:140px; }
+  .item { border-bottom:1px solid #e5e7eb; padding:10px 0; cursor:pointer; }
+  .item:hover { background:#f8fafc; }
+  .badge { display:inline-block; padding:3px 8px; border-radius:12px; font-size:11px; color:#fff; }
+  .top-actions { display:flex; gap:8px; margin-bottom:14px; }
+  .tabs { display:flex; gap:8px; flex:1; }
+  .tabs button { background:#e2e8f0; color:#1f2937; margin-top:0; }
+  .tabs button.active { background:#0ea5e9; color:#fff; }
+  .timeline { border-left:2px solid #cbd5e1; padding-left:14px; margin-top:10px; }
+  .timeline-item { margin-bottom:12px; }
+  .timeline-item .fecha { font-size:12px; color:#64748b; }
+  .qr-img { display:block; margin:10px auto; }
+  .qr-wrap { text-align:center; background:#e0f2fe; border-radius:10px; padding:14px; margin:12px 0; }
+  .aviso-sin-costos { font-size:11px; color:#64748b; font-style:italic; }
+  .espera { background:#f8fafc; border:1.5px solid #e2e8f0; padding:12px; border-radius:8px; font-size:13px; color:#64748b; }
+  .caja-material { background:#faf5ff; border:1.5px solid #e9d5ff; border-radius:10px; padding:12px; margin-top:12px; }
+  .modal-overlay { position:fixed; inset:0; background:rgba(15,23,42,0.85); display:flex; align-items:center; justify-content:center; z-index:999; }
+  .modal-box { background:#fff; border-radius:14px; padding:20px; max-width:420px; width:92%; text-align:center; }
+  #videoScan { width:100%; border-radius:10px; background:#000; }
+  .config-box { background:#fffbeb; border:1.5px solid #fde68a; padding:14px; border-radius:10px; margin-bottom:14px; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔧 Panel Técnico — Ingreso de Equipos</h1>
+
+  <div id="configBox" class="config-box" style="display:none;">
+    ⚙️ Primera vez: pegá la URL de tu API de Apps Script (termina en <code>/exec</code>)
+    <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
+    <button onclick="guardarScriptUrl()">Guardar URL</button>
+  </div>
+
+  <div id="loginBox" class="card" style="display:none;">
+    <label>Contraseña de Técnico</label>
+    <input type="password" id="passInput" placeholder="Ingresá la contraseña">
+    <button onclick="login()">Ingresar</button>
+    <div id="loginError" style="color:#dc2626; margin-top:8px; font-size:13px;"></div>
+  </div>
+
+  <div id="appBox" style="display:none;">
+    <div class="top-actions">
+      <div class="tabs">
+        <button id="tabNuevo" onclick="mostrarTab('nuevo')">+ Nuevo Ingreso</button>
+        <button id="tabLista" onclick="mostrarTab('lista')" class="active">Mis pendientes</button>
+      </div>
+      <button class="scan-btn" style="margin-top:0;" onclick="abrirScanner()">📷 Escanear QR</button>
+    </div>
+
+    <div id="vistaNuevo" class="card" style="display:none;">
+      <h3>Nuevo Ingreso</h3>
+      <label>Camino</label>
+      <select id="camino" onchange="toggleOT()">
+        <option value="Con OT">Con OT</option>
+        <option value="Sin OT">Sin OT</option>
+      </select>
+      <div id="campoOT"><label>N° de OT</label><input type="text" id="numOT"></div>
+      <label>Responsable (quién trae)</label>
+      <select id="responsableTrae"></select>
+      <label>Origen</label>
+      <input type="text" id="origen" placeholder="Cliente, sucursal, dirección o 'trabajo de campo'">
+      <div class="row">
+        <div><label>Tipo de equipo</label><input type="text" id="tipoEquipo"></div>
+        <div><label>Marca</label><input type="text" id="marca"></div>
+        <div><label>Modelo</label><input type="text" id="modelo"></div>
+      </div>
+      <label>N° de Serie</label><input type="text" id="nSerie">
+      <label>Problema reportado</label><textarea id="problemaReportado" rows="3"></textarea>
+      <label>Quién recibe</label>
+      <select id="quienRecibe"></select>
+      <button onclick="guardarIngreso()">Guardar Ingreso</button>
+      <div id="resultadoNuevo"></div>
+    </div>
+
+    <div id="vistaLista" class="card">
+      <label>Filtrar por estado</label>
+      <select id="filtroEstado" onchange="cargarLista()"><option value="Todos">Todos</option></select>
+      <div id="listaIngresos"></div>
+      <div class="aviso-sin-costos">No se muestran presupuestos ni items finalizados en este panel.</div>
+    </div>
+
+    <div id="vistaDetalle" class="card" style="display:none;">
+      <button class="secondary" onclick="volverALista()">← Volver</button>
+      <div id="detalleContenido"></div>
+    </div>
+  </div>
+</div>
+
+<div id="scannerModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h3>📷 Escanear QR del equipo</h3>
+    <video id="videoScan" autoplay playsinline muted></video>
+    <p id="scanStatus" style="font-size:13px;color:#64748b;">Apuntá la cámara al QR pegado en el equipo...</p>
+    <button class="secondary" onclick="cerrarScanner()">Cancelar</button>
+  </div>
+</div>
+
+<script>
+// ===== CONEXIÓN A LA API (Apps Script) =====
+let SCRIPT_URL = localStorage.getItem('ingresoEquipos_scriptUrl') || '';
+
+function initConexion() {
+  if (!SCRIPT_URL) {
+    document.getElementById('configBox').style.display = 'block';
+  } else {
+    document.getElementById('loginBox').style.display = 'block';
+  }
+}
+function guardarScriptUrl() {
+  const url = document.getElementById('scriptUrlInput').value.trim();
+  if (!url) return;
+  localStorage.setItem('ingresoEquipos_scriptUrl', url);
+  SCRIPT_URL = url;
+  document.getElementById('configBox').style.display = 'none';
+  document.getElementById('loginBox').style.display = 'block';
+}
+async function api(action, data) {
+  const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: action, data: data || {} }) });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || 'Error desconocido');
+  return json.result;
+}
+
+let PERSONAL = [];
+let ESTADOS_TECNICO = ['Ingresado','Listo para reparar','En reparación','Listo para retirar','Retirado'];
+const COLORES = {
+  'Ingresado':'#3b82f6','A presupuestar':'#eab308','Presupuestado':'#a855f7',
+  'Listo para reparar':'#0ea5e9','En reparación':'#f97316','Listo para retirar':'#16a34a',
+  'Retirado':'#0891b2','Finalizado':'#6b7280'
+};
+window.idIngresoActual = null;
+
+async function login() {
+  const pass = document.getElementById('passInput').value;
+  try {
+    const ok = await api('verificarPasswordTecnico', { pass: pass });
+    if (ok) {
+      document.getElementById('loginBox').style.display = 'none';
+      document.getElementById('appBox').style.display = 'block';
+      cargarBase();
+    } else {
+      document.getElementById('loginError').innerText = 'Contraseña incorrecta';
+    }
+  } catch (e) {
+    document.getElementById('loginError').innerText = 'Error de conexión: ' + e.message;
+  }
+}
+
+async function cargarBase() {
+  PERSONAL = await api('getPersonal');
+  ['responsableTrae','quienRecibe'].forEach(function(id) {
+    const sel = document.getElementById(id);
+    PERSONAL.forEach(function(p) { sel.appendChild(new Option(p, p)); });
+  });
+  const sel = document.getElementById('filtroEstado');
+  ESTADOS_TECNICO.forEach(function(e) { sel.appendChild(new Option(e, e)); });
+  cargarLista();
+}
+
+function mostrarTab(tab) {
+  document.getElementById('vistaNuevo').style.display = tab === 'nuevo' ? 'block' : 'none';
+  document.getElementById('vistaLista').style.display = tab === 'lista' ? 'block' : 'none';
+  document.getElementById('vistaDetalle').style.display = 'none';
+  document.getElementById('tabNuevo').className = tab === 'nuevo' ? 'active' : '';
+  document.getElementById('tabLista').className = tab === 'lista' ? 'active' : '';
+  if (tab === 'lista') cargarLista();
+}
+function toggleOT() {
+  document.getElementById('campoOT').style.display = document.getElementById('camino').value === 'Con OT' ? 'block' : 'none';
+}
+
+async function guardarIngreso() {
+  const datos = {
+    camino: document.getElementById('camino').value,
+    numOT: document.getElementById('numOT').value,
+    responsableTrae: document.getElementById('responsableTrae').value,
+    origen: document.getElementById('origen').value,
+    tipoEquipo: document.getElementById('tipoEquipo').value,
+    marca: document.getElementById('marca').value,
+    modelo: document.getElementById('modelo').value,
+    nSerie: document.getElementById('nSerie').value,
+    problemaReportado: document.getElementById('problemaReportado').value,
+    quienRecibe: document.getElementById('quienRecibe').value
+  };
+  if (!datos.tipoEquipo || !datos.problemaReportado) { alert('Completá tipo de equipo y problema reportado.'); return; }
+
+  try {
+    const res = await api('crearIngreso', datos);
+    document.getElementById('resultadoNuevo').innerHTML =
+      '<div class="qr-wrap"><b>✅ Ingreso creado: ' + res.idIngreso + '</b>' +
+      '<img class="qr-img" src="' + res.qrUrl + '" width="180">' +
+      '<button class="secondary" onclick="imprimirEtiqueta(\'' + res.idIngreso + '\',\'' + res.qrUrl + '\')">🖨️ Imprimir etiqueta ahora</button></div>';
+    mostrarTab('lista');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+function imprimirEtiqueta(id, qrUrl) {
+  const w = window.open('', '_blank', 'width=420,height=520');
+  w.document.write('<html><head><title>Etiqueta ' + id + '</title><style>body{font-family:Arial;text-align:center;padding:20px;} .marco{border:2px dashed #999;padding:16px;border-radius:10px;}</style></head><body><div class="marco"><h2>' + id + '</h2><img src="' + qrUrl + '" width="220"></div></body></html>');
+  w.document.close();
+  setTimeout(function(){ try { w.print(); } catch(e) {} }, 400);
+}
+
+async function cargarLista() {
+  const filtro = document.getElementById('filtroEstado').value;
+  const cont = document.getElementById('listaIngresos');
+  cont.innerHTML = 'Cargando...';
+  try {
+    const items = await api('listarIngresosTecnico', { filtro: filtro });
+    if (!items.length) { cont.innerHTML = '<p>No hay ingresos con ese filtro.</p>'; return; }
+    cont.innerHTML = items.map(function(it) {
+      const color = COLORES[it.Estado_Actual] || '#64748b';
+      return '<div class="item" onclick="abrirDetalle(\'' + it.ID_Ingreso + '\')">' +
+        '<b>' + it.ID_Ingreso + '</b> — ' + it.Tipo_Equipo + ' (' + it.Marca + ' ' + it.Modelo + ')<br>' +
+        '<span class="badge" style="background:' + color + '">' + it.Estado_Actual + '</span>' +
+        '<span style="font-size:12px;color:#64748b;"> · Trae: ' + it.Responsable_Trae + '</span></div>';
+    }).join('');
+  } catch (e) {
+    cont.innerHTML = '<p style="color:#dc2626;">Error: ' + e.message + '</p>';
+  }
+}
+
+function volverALista() {
+  document.getElementById('vistaDetalle').style.display = 'none';
+  document.getElementById('vistaLista').style.display = 'block';
+}
+function selectPersonal(idSel, valorDefault) {
+  return '<select id="' + idSel + '"><option value="">-- Seleccionar --</option>' +
+    PERSONAL.map(function(p){return '<option value="'+p+'"'+(p===valorDefault?' selected':'')+'>'+p+'</option>';}).join('') + '</select>';
+}
+
+async function abrirDetalle(id) {
+  window.idIngresoActual = id;
+  document.getElementById('vistaNuevo').style.display = 'none';
+  document.getElementById('vistaLista').style.display = 'none';
+  document.getElementById('vistaDetalle').style.display = 'block';
+  document.getElementById('detalleContenido').innerHTML = 'Cargando...';
+
+  try {
+    const data = await api('obtenerIngresoTecnico', { id: id });
+    if (!data) { document.getElementById('detalleContenido').innerHTML = '<p>No encontrado.</p>'; return; }
+    const ing = data.ingreso, hist = data.historial;
+    let html = '<h3>' + ing.ID_Ingreso + '</h3>';
+    html += '<p><b>Equipo:</b> ' + ing.Tipo_Equipo + ' - ' + ing.Marca + ' ' + ing.Modelo + ' (N° serie: ' + (ing.N_Serie||'-') + ')</p>';
+    html += '<p><b>Camino:</b> ' + ing.Camino + (ing.Num_OT ? ' — OT: ' + ing.Num_OT : '') + '</p>';
+    html += '<p><b>Trae:</b> ' + ing.Responsable_Trae + ' — <b>Origen:</b> ' + (ing.Origen||'-') + '</p>';
+    html += '<p><b>Problema reportado:</b> ' + ing.Problema_Reportado + '</p>';
+    html += '<p><b>Estado actual:</b> <span class="badge" style="background:' + (COLORES[ing.Estado_Actual]||'#64748b') + '">' + ing.Estado_Actual + '</span></p>';
+    if (ing.Diagnostico) html += '<p><b>Diagnóstico</b> (' + ing.Tecnico_Diagnostico + '): ' + ing.Diagnostico + '</p>';
+    if (ing.Tipo_Reparacion) html += '<p><b>Reparación:</b> ' + ing.Tipo_Reparacion + (ing.Proveedor_Externo?' ('+ing.Proveedor_Externo+')':'') + ' — Técnico: ' + ing.Tecnico_Reparacion + '</p>';
+    if (ing.En_Pausa === 'Sí') html += '<p style="color:#b45309;">⏸️ En pausa — Motivo: ' + ing.Motivo_Pausa + '</p>';
+    if (ing.Materiales_Usados) html += '<p><b>Materiales usados:</b><br>' + String(ing.Materiales_Usados).replace(/\n/g,'<br>') + '</p>';
+    if (ing.Solucion_Aplicada) html += '<p><b>Solución aplicada:</b> ' + ing.Solucion_Aplicada + ' (' + ing.Responsable_Cierre + ')</p>';
+    if (ing.QR_URL) html += '<div class="qr-wrap"><img class="qr-img" src="' + ing.QR_URL + '" width="140">' +
+      '<button class="secondary" onclick="imprimirEtiqueta(\'' + ing.ID_Ingreso + '\',\'' + ing.QR_URL + '\')">🖨️ Reimprimir etiqueta</button></div>';
+
+    html += renderAccionesTecnico_(ing);
+
+    html += '<hr><h4>Historial</h4><div class="timeline">';
+    hist.forEach(function(h) {
+      html += '<div class="timeline-item"><span class="badge" style="background:' + (COLORES[h.Evento]||'#64748b') + '">' + h.Evento + '</span>' +
+        '<div class="fecha">' + new Date(h.Fecha).toLocaleString() + ' — ' + h.Responsable + '</div>' +
+        (h.Detalle ? '<div>' + h.Detalle + '</div>' : '') + '</div>';
+    });
+    html += '</div>';
+    document.getElementById('detalleContenido').innerHTML = html;
+  } catch (e) {
+    document.getElementById('detalleContenido').innerHTML = '<p style="color:#dc2626;">Error: ' + e.message + '</p>';
+  }
+}
+
+function renderAccionesTecnico_(ing) {
+  let html = '<hr><h4>Acciones</h4>';
+  const estado = ing.Estado_Actual;
+
+  if (estado === 'Ingresado') {
+    html += '<label>Técnico que toma el diagnóstico</label>' + selectPersonal('tecnicoDiag', 'Alejandro Sarmiento');
+    html += '<label>Diagnóstico (informe corto)</label><textarea id="diagnosticoTxt" rows="3"></textarea>';
+    html += '<button onclick="guardarDiagnostico(\'' + ing.ID_Ingreso + '\')">Guardar diagnóstico</button>';
+  } else if (estado === 'A presupuestar' || estado === 'Presupuestado') {
+    html += '<div class="espera">A la espera de que administración cargue el presupuesto y el cliente lo apruebe.</div>';
+  } else if (estado === 'Listo para reparar') {
+    html += '<label>Tipo de reparación</label><select id="tipoRep" onchange="toggleProv()">' +
+      '<option value="Interna">Interna (en el taller)</option><option value="Proveedor externo">Proveedor externo</option></select>';
+    html += '<div id="bloqueProv" style="display:none;"><label>Nombre del proveedor</label><input type="text" id="proveedorTxt"></div>';
+    html += '<label>Técnico a cargo</label>' + selectPersonal('tecnicoRepSel', 'Alejandro Sarmiento');
+    html += '<button onclick="guardarIniciarReparacion(\'' + ing.ID_Ingreso + '\')">Iniciar reparación</button>';
+  } else if (estado === 'En reparación') {
+    if (ing.En_Pausa === 'Sí') {
+      html += '<button onclick="guardarPausa(\'' + ing.ID_Ingreso + '\', false)">▶️ Reanudar</button>';
+    } else {
+      html += '<label>Motivo de la pausa (para marcar "En proceso")</label><input type="text" id="motivoPausa">';
+      html += '<button onclick="guardarPausa(\'' + ing.ID_Ingreso + '\', true)">⏸️ Marcar En proceso (pausar)</button>';
+    }
+
+    html += '<div class="caja-material"><h4 style="margin-top:0;">📦 Consumir material del pañol</h4>';
+    html += '<label>Código de material</label><input type="text" id="codigoMaterial" placeholder="Ej: FR-001-0001">';
+    html += '<button class="material-btn" onclick="buscarMaterial()">Buscar</button>';
+    html += '<div id="resultadoBusquedaMaterial"></div></div>';
+
+    html += '<hr><label>Solución aplicada (obligatorio)</label><textarea id="solucionTxt" rows="2"></textarea>';
+    html += '<label>Responsable del cierre</label>' + selectPersonal('responsableCierreSel');
+    html += '<button onclick="guardarCierre(\'' + ing.ID_Ingreso + '\')">✅ Listo para retirar</button>';
+  } else if (estado === 'Listo para retirar') {
+    html += '<div class="espera">Reparación cerrada. A la espera de que se retire del taller.</div>';
+  } else if (estado === 'Retirado') {
+    html += '<div class="espera">Ya salió del taller. Administración lo va a finalizar.</div>';
+  }
+  return html;
+}
+
+function toggleProv() {
+  document.getElementById('bloqueProv').style.display = document.getElementById('tipoRep').value === 'Proveedor externo' ? 'block' : 'none';
+}
+async function guardarDiagnostico(id) {
+  const tecnico = document.getElementById('tecnicoDiag').value;
+  const diagnostico = document.getElementById('diagnosticoTxt').value;
+  if (!tecnico || !diagnostico) { alert('Completá técnico y diagnóstico.'); return; }
+  try { await api('registrarDiagnostico', { id: id, diagnostico: diagnostico, tecnico: tecnico }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+async function guardarIniciarReparacion(id) {
+  const tipo = document.getElementById('tipoRep').value;
+  const proveedor = tipo === 'Proveedor externo' ? document.getElementById('proveedorTxt').value : '';
+  const tecnico = document.getElementById('tecnicoRepSel').value;
+  if (!tecnico) { alert('Elegí el técnico a cargo.'); return; }
+  if (tipo === 'Proveedor externo' && !proveedor) { alert('Indicá el proveedor.'); return; }
+  try { await api('iniciarReparacion', { id: id, tipo: tipo, proveedor: proveedor, tecnico: tecnico }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+async function guardarPausa(id, pausar) {
+  const motivo = pausar ? document.getElementById('motivoPausa').value : '';
+  try { await api('togglePausa', { id: id, pausar: pausar, motivo: motivo, tecnico: '' }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+
+// ===== MATERIALES =====
+async function buscarMaterial() {
+  const codigo = document.getElementById('codigoMaterial').value.trim();
+  if (!codigo) return;
+  const cont = document.getElementById('resultadoBusquedaMaterial');
+  cont.innerHTML = 'Buscando...';
+  try {
+    const mat = await api('buscarMaterialPorCodigo', { codigo: codigo });
+    if (!mat) { cont.innerHTML = '<p style="color:#dc2626;">No se encontró ese código.</p>'; return; }
+    let html = '<p><b>' + mat.name + '</b> (' + mat.unit + ')</p>';
+    html += '<p style="font-size:13px;">Stock nuevo: ' + mat.stockNuevo + ' — Stock usado: ' + mat.stockUsado + '</p>';
+    html += '<label>Origen del stock</label><select id="origenStock"><option value="nuevo">Nuevo</option><option value="usado">Usado</option></select>';
+    html += '<label>Cantidad</label><input type="number" id="cantidadMaterial" value="1" min="1">';
+    html += '<label>Técnico que retira</label>' + selectPersonal('tecnicoRetiraMaterial');
+    html += '<label>Observación (opcional)</label><input type="text" id="obsMaterial">';
+    html += '<button class="material-btn" onclick="confirmarConsumoMaterial(\'' + mat.id + '\')">Consumir material</button>';
+    cont.innerHTML = html;
+  } catch (e) {
+    cont.innerHTML = '<p style="color:#dc2626;">' + e.message + '</p>';
+  }
+}
+async function confirmarConsumoMaterial(codigo) {
+  const idIngreso = window.idIngresoActual;
+  const cantidad = document.getElementById('cantidadMaterial').value;
+  const origenStock = document.getElementById('origenStock').value;
+  const obs = document.getElementById('obsMaterial').value;
+  const tecnico = document.getElementById('tecnicoRetiraMaterial').value;
+  if (!tecnico) { alert('Indicá qué técnico retira el material.'); return; }
+  try {
+    const res = await api('consumirMaterial', { id: idIngreso, codigo: codigo, cantidad: cantidad, origenStock: origenStock, tecnico: tecnico, obs: obs });
+    alert('✅ Consumido: ' + res.nombreMaterial + '. Stock restante: ' + res.stockRestante);
+    abrirDetalle(idIngreso);
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function guardarCierre(id) {
+  const solucion = document.getElementById('solucionTxt').value;
+  const responsable = document.getElementById('responsableCierreSel').value;
+  if (!solucion || !responsable) { alert('Solución y responsable son obligatorios.'); return; }
+  try { await api('finalizarReparacionTecnico', { id: id, solucion: solucion, responsable: responsable }); abrirDetalle(id); }
+  catch (e) { alert(e.message); }
+}
+
+// ===== ESCÁNER QR — en técnico SOLO muestra el estado =====
+let scanStream = null, scanActivo = false;
+function abrirScanner() {
+  document.getElementById('scannerModal').style.display = 'flex';
+  document.getElementById('scanStatus').innerText = 'Apuntá la cámara al QR pegado en el equipo...';
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function(stream) {
+    scanStream = stream;
+    document.getElementById('videoScan').srcObject = stream;
+    scanActivo = true;
+    requestAnimationFrame(tickScan);
+  }).catch(function(err) {
+    document.getElementById('scanStatus').innerText = 'No se pudo acceder a la cámara: ' + err.message;
+  });
+}
+function tickScan() {
+  if (!scanActivo) return;
+  const video = document.getElementById('videoScan');
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = (typeof jsQR !== 'undefined') ? jsQR(imageData.data, imageData.width, imageData.height) : null;
+    if (code && code.data) {
+      const match = code.data.match(/ID:\s*(\S+)/);
+      if (match) { cerrarScanner(); mostrarSoloEstado(match[1]); return; }
+    }
+  }
+  requestAnimationFrame(tickScan);
+}
+function cerrarScanner() {
+  scanActivo = false;
+  if (scanStream) { scanStream.getTracks().forEach(function(t){t.stop();}); scanStream = null; }
+  document.getElementById('scannerModal').style.display = 'none';
+}
+async function mostrarSoloEstado(id) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  try {
+    const data = await api('obtenerEstadoSolo', { id: id });
+    if (!data) {
+      overlay.innerHTML = '<div class="modal-box"><h3>No encontrado</h3><button class="secondary" onclick="this.closest(\'.modal-overlay\').remove()">Cerrar</button></div>';
+    } else {
+      const color = COLORES[data.Estado_Actual] || '#64748b';
+      overlay.innerHTML = '<div class="modal-box"><h3>' + data.ID_Ingreso + '</h3>' +
+        '<p>' + data.Tipo_Equipo + ' — ' + data.Marca + ' ' + data.Modelo + '</p>' +
+        '<div style="margin:16px 0;"><span class="badge" style="background:' + color + ';font-size:16px;padding:8px 16px;">' + data.Estado_Actual + '</span></div>' +
+        '<button class="secondary" onclick="this.closest(\'.modal-overlay\').remove()">Cerrar</button></div>';
+    }
+  } catch (e) {
+    overlay.innerHTML = '<div class="modal-box"><h3>Error</h3><p>' + e.message + '</p><button class="secondary" onclick="this.closest(\'.modal-overlay\').remove()">Cerrar</button></div>';
+  }
+  document.body.appendChild(overlay);
+}
+
+initConexion();
+</script>
+</body>
+</html>
