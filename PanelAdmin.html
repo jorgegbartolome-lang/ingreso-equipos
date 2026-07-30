@@ -138,15 +138,29 @@ function guardarScriptUrl() {
   document.getElementById('loginBox').style.display = 'block';
 }
 
-// Llama a la API. Usa POST con body de texto plano (evita preflight CORS), igual que la app del pañol.
-async function api(action, data) {
-  const res = await fetch(SCRIPT_URL, {
-    method: 'POST',
-    body: JSON.stringify({ action: action, data: data || {} })
+// Llama a la API usando JSONP (una etiqueta <script>), que no sufre el bloqueo de CORS
+// que sí afecta a fetch() cuando GitHub Pages y Google Script son dominios distintos.
+function api(action, data) {
+  return new Promise(function(resolve, reject) {
+    const callbackName = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
+    window[callbackName] = function(payload) {
+      delete window[callbackName];
+      script.remove();
+      if (payload.ok) resolve(payload.result);
+      else reject(new Error(payload.error || 'Error desconocido'));
+    };
+    const url = SCRIPT_URL + '?action=' + encodeURIComponent(action) +
+      '&data=' + encodeURIComponent(JSON.stringify(data || {})) +
+      '&callback=' + callbackName;
+    const script = document.createElement('script');
+    script.src = url;
+    script.onerror = function() {
+      delete window[callbackName];
+      script.remove();
+      reject(new Error('No se pudo conectar con la API. Revisá la URL configurada.'));
+    };
+    document.body.appendChild(script);
   });
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error || 'Error desconocido');
-  return json.result;
 }
 
 let ESTADOS = [];
